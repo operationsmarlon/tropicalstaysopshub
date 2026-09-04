@@ -456,6 +456,40 @@ textarea.inp{resize:vertical;min-height:64px}
 .chkpill{display:inline-flex;align-items:center;gap:6px;font-size:11px;padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);cursor:pointer;user-select:none}
 .chkpill.on{background:var(--ok-l);border-color:var(--ok-b);color:var(--ok)}
 
+
+/* ===== mobile friendliness pass ===== */
+@media(max-width:760px){
+  /* stop iOS auto-zoom when focusing a field (needs >=16px) */
+  .inp,select.inp,textarea.inp,#loginEmail,#loginPass{font-size:16px}
+  /* finger-sized tap targets */
+  .btn{padding:9px 14px;font-size:13px}
+  .btn.sm{padding:7px 11px;font-size:12px}
+  .segbtn{padding:9px 13px;font-size:12.5px}
+  select.inp{min-height:40px;padding:8px 9px}
+  .nb{padding-top:11px;padding-bottom:11px}
+  .toolbtn{padding:8px 12px}
+  /* wide tables scroll instead of getting crushed */
+  .card-bd,.wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .tbl{font-size:12px}
+  .tbl th{padding:8px 9px;white-space:nowrap}
+  .tbl td{padding:8px 9px}
+  /* segmented toggles never overflow the screen */
+  .seg{max-width:100%}
+  /* tighter chrome so content gets the room */
+  .hero{padding:15px 14px 13px}
+  .card-bd{padding:13px}
+  .kpi{padding:12px 13px}
+  /* keep everything inside the viewport, no sideways page drift */
+  .page{max-width:100vw;overflow-x:hidden}
+  .cleancard,.rescard{max-width:100%}
+  .resh{gap:8px;padding:12px 13px}
+}
+@media(max-width:430px){
+  .kpis{grid-template-columns:1fr 1fr!important;gap:8px}
+  .pg-title{font-size:20px}
+  .pg-sub{font-size:12px}
+  .hero .steps{grid-template-columns:1fr}
+}
 </style>
 </head>
 <body>
