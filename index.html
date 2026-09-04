@@ -490,6 +490,13 @@ textarea.inp{resize:vertical;min-height:64px}
   .pg-sub{font-size:12px}
   .hero .steps{grid-template-columns:1fr}
 }
+/* mobile top-bar: clear the status bar, bigger burger tap target */
+@media(max-width:760px){
+  .topbar{height:auto;min-height:52px;padding-top:calc(env(safe-area-inset-top) + 6px);padding-bottom:6px}
+  .tb-burger{width:44px;height:44px}
+  .tb-burger svg{width:22px;height:22px}
+  #syncPill{font-size:10px;padding:2px 7px}
+}
 </style>
 </head>
 <body>
@@ -811,10 +818,12 @@ function fireWebhook(name,payload){
     .catch(()=>toast("Webhook failed for "+name+" (saved locally)."));
 }
 function updateSyncPill(){
+  const pill=document.getElementById("syncPill");
+  if(!pill) return;
+  if(typeof CLOUD!=="undefined" && CLOUD.on){ pill.innerHTML='Sync: <b style="color:var(--ok)">cloud live</b>'; return; }
   const cfg=db("integrationConfig",{webhooks:{}}); const s=db("settings",{});
   const any=Object.values(cfg.webhooks||{}).some(v=>v);
   const stamps=Object.values(s.lastSync||{}).filter(Boolean).sort();
-  const pill=document.getElementById("syncPill");
   if(!any){ pill.innerHTML="Sync: <b>local only</b>"; return; }
   if(!stamps.length){ pill.innerHTML="Sync: <b>configured, idle</b>"; return; }
   const last=new Date(stamps[stamps.length-1]);
@@ -1144,7 +1153,7 @@ function viewCoverage(){
       +'<td>'+sel+'</td></tr>';
   }).join("");
   const splitCard='<div class="card"><div class="card-hd"><h3>Task split, who owns what</h3></div><div class="card-bd">'
-    +'<div class="note" style="margin:-2px 0 12px">The Status column is yours to update and it saves locally. Automate shows the native target where each task should stop being manual.</div>'
+    +'<div class="note" style="margin:-2px 0 12px">The Status column is yours to update and it saves automatically. Automate shows the native target where each task should stop being manual.</div>'
     +filters
     +'<div style="overflow-x:auto"><table class="tbl" id="covTbl"><thead><tr><th>Category</th><th>Task</th><th>Owner</th><th>Freq</th><th>Tool</th><th>Automate to</th><th>Status</th></tr></thead><tbody>'+rows+'</tbody></table></div>'
     +'</div></div>';
@@ -1434,7 +1443,7 @@ function viewMidstay(){
     +'</div>';
   let body = view==="calendar"?midCalendar(list): view==="log"?midLog(list): midStays(list);
   return head("Housekeeping, Julie at Sea Side Cleaning","Mid-stay cleans",
-      "Every stay over 14 nights gets a mid-stay clean. Open a stay to add or edit its individual cleans. Everything saves locally.")
+      "Every stay over 14 nights gets a mid-stay clean. Open a stay to add or edit its individual cleans. Everything saves automatically.")
     +midHero()+strip
     +viewSeg(view,[["cleans","Stays & cleans"],["log","Clean master log"],["calendar","Calendar"]],"midSetView")
     +body;
