@@ -497,6 +497,26 @@ textarea.inp{resize:vertical;min-height:64px}
   .tb-burger svg{width:22px;height:22px}
   #syncPill{font-size:10px;padding:2px 7px}
 }
+/* ===== bright SaaS re-skin (screenshot direction), overrides tokens hub-wide ===== */
+:root{
+  --bg:#f6f7f9; --card:#ffffff;
+  --ink:#111a24; --ink2:#39424e; --muted:#6b7280;
+  --line:#e7eaef; --line2:#dfe3ea;
+  --dgreen:#1f9d57;
+  --sage:#a7d3b8; --sage-d:#2f9e63; --sage-l:rgba(31,157,87,.10); --sage-b:rgba(31,157,87,.32);
+  --tan:#6f8296; --brown:#e5484d;
+  --ok:#16a34a; --ok-l:rgba(22,163,74,.11); --ok-b:rgba(22,163,74,.26);
+  --warn:#d97706; --warn-l:rgba(217,119,6,.12); --warn-b:rgba(217,119,6,.26);
+  --alert:#e5484d; --alert-l:rgba(229,72,77,.11); --alert-b:rgba(229,72,77,.26);
+  --info:#3b82f6; --info-l:rgba(59,130,246,.11); --info-b:rgba(59,130,246,.26);
+  --disp:'Inter',system-ui,-apple-system,sans-serif;
+  --r:8px; --r2:12px; --r3:16px;
+}
+.pg-title,.tb-title{font-weight:600;letter-spacing:-.01em}
+.card-hd h3,.sechd h3{font-weight:600}
+.card{box-shadow:0 1px 2px rgba(17,26,36,.04),0 1px 3px rgba(17,26,36,.05)}
+.chip,.pill{font-weight:600}
+.btn{font-weight:600}
 </style>
 </head>
 <body>
@@ -967,7 +987,7 @@ function renderPage(k){
   setActiveNav(k);
   const map={myday:viewMyDay,coverage:viewCoverage,midstay:viewMidstay,dash:viewDash,tasks:viewTasks,maint:viewMaint,serv:viewServ,props:viewProps,pipe:viewPipe,
     sops:()=>viewGeneric("sops"),flows:()=>viewGeneric("workflows"),guest:()=>viewGeneric("guestComms"),
-    quick:()=>viewGeneric("quickReplies"),faqs:()=>viewGeneric("faqs"),resources:()=>viewGeneric("resources"),
+    quick:()=>viewGeneric("quickReplies"),faqs:()=>viewFaqs(),resources:()=>viewGeneric("resources"),
     team:viewTeam,sheets:viewSheets,eod:viewEOD,reviews:()=>viewGeneric("reviews"),consum:viewConsumables,shield:viewShield,edit:viewEdit,contacts:viewContacts};
   document.getElementById("page").innerHTML=(map[k]||viewDash)();
   updateNavBadges();
@@ -1589,7 +1609,7 @@ function toggleTrial(k){ const s=db("settings",{}); s.trial=s.trial||{}; s.trial
 function quickAddTask(){
   if(!requireEdit("tasks"))return;
   const el=document.getElementById("quickTask"); const v=(el.value||"").trim(); if(!v)return;
-  const list=db("tasks",[]); list.push({id:uid("task"),title:v,property:"",priority:"P3",assignee:"",due:todayAU(),status:"open",notes:"",created:nowISO(),updated:nowISO()});
+  const list=db("tasks",[]); const nt={id:uid("task"),title:v,property:"",priority:"P3",assignee:"",due:todayAU(),status:"open",notes:"",created:nowISO(),updated:nowISO()}; list.push(nt); notifyTask("created",nt);
   save("tasks",list); logAct("add","tasks",v); toast("Task added for today."); renderPage("dash");
 }
 function cycleTask(id){ if(!requireEdit("tasks"))return; const order=["open","progress","blocked","done"]; const list=db("tasks",[]); const t=list.find(x=>x.id===id); if(!t)return; t.status=order[(order.indexOf(t.status)+1)%order.length]; t.updated=nowISO(); save("tasks",list); renderPage(currentTab); }
@@ -1605,9 +1625,12 @@ function taskActive(t){ return t.status!=="done"&&t.status!=="cancelled"; }
 function taskScopeName(t){ return t.property?propName(t.property):"Tropical Stays"; }
 function subProgress(t){ const s=t.subtasks||[]; const done=s.filter(x=>x.status==="done").length; return {done:done,total:s.length,pct:s.length?Math.round(done/s.length*100):0}; }
 function contactOptions(sel){
-  const cs=db("contacts",[]).slice().sort((a,b)=>(a.name||"").localeCompare(b.name||"")); let found=false;
-  let opts='<option value="">Unassigned</option>';
-  cs.forEach(c=>{ if(c.name===sel)found=true; opts+='<option value="'+esc(c.name)+'" '+(sel===c.name?"selected":"")+'>'+esc(c.name)+(c.role?" ("+esc(c.role)+")":"")+'</option>'; });
+  const seen={}; const rows=[];
+  db("users",[]).forEach(u=>{ if(u.name&&!seen[u.name.toLowerCase()]){ seen[u.name.toLowerCase()]=1; rows.push({name:u.name,role:"team"}); } });
+  db("contacts",[]).forEach(c=>{ if(c.name&&!seen[c.name.toLowerCase()]){ seen[c.name.toLowerCase()]=1; rows.push({name:c.name,role:c.role||""}); } });
+  rows.sort((a,b)=>a.name.localeCompare(b.name));
+  let found=false; let opts='<option value="">Unassigned</option>';
+  rows.forEach(r=>{ if(r.name===sel)found=true; opts+='<option value="'+esc(r.name)+'" '+(sel===r.name?"selected":"")+'>'+esc(r.name)+(r.role?" ("+esc(r.role)+")":"")+'</option>'; });
   if(sel&&!found) opts+='<option value="'+esc(sel)+'" selected>'+esc(sel)+'</option>';
   return opts;
 }
@@ -1615,8 +1638,8 @@ function taskStatusSelect(id,cur,cls){ cur=cur||"open";
   return '<select class="statpill '+taskStatusTone(cur)+' '+(cls||"")+'" onclick="event.stopPropagation()" onchange="setTaskStatus(\''+id+'\',this.value)">'
     +TASK_STATUS.map(([k,l])=>'<option value="'+k+'" '+(cur===k?"selected":"")+'>'+esc(l)+'</option>').join("")+'</select>';
 }
-function setTaskStatus(id,val){ const list=db("tasks",[]); const t=list.find(x=>x.id===id); if(!t)return; t.status=val; t.updated=nowISO(); save("tasks",list); logAct("edit","tasks",t.title); if(taskDetailOpen!==id) renderPage(currentTab); }
-function taskSetField(id,field,val){ const list=db("tasks",[]); const t=list.find(x=>x.id===id); if(!t)return; t[field]=val; t.updated=nowISO(); save("tasks",list); if(taskDetailOpen!==id) renderPage(currentTab); }
+function setTaskStatus(id,val){ const list=db("tasks",[]); const t=list.find(x=>x.id===id); if(!t)return; t.status=val; t.updated=nowISO(); save("tasks",list); notifyTask("status_changed",t,{to:val}); logAct("edit","tasks",t.title); if(taskDetailOpen!==id) renderPage(currentTab); }
+function taskSetField(id,field,val){ const list=db("tasks",[]); const t=list.find(x=>x.id===id); if(!t)return; t[field]=val; t.updated=nowISO(); save("tasks",list); if(field==="assignee"||field==="due"||field==="priority") notifyTask("updated",t,{field:field,to:val}); if(taskDetailOpen!==id) renderPage(currentTab); }
 
 let taskФ={status:"open",q:"",assignee:"",prop:"",prio:"",view:"list",group:"status",month:""};
 let taskDetailOpen=null, subDetailOpen=null, subCtx={taskId:null,subId:null}, draggedTask=null;
@@ -1643,10 +1666,42 @@ function taskToolbar(){
       +'<div class="seg">'+vbtn("list","List")+vbtn("board","Board")+vbtn("calendar","Calendar")+'</div>'
       +'<input class="inp" style="max-width:180px" placeholder="Search tasks" value="'+esc(taskФ.q)+'" oninput="taskФ.q=this.value;renderPage(\'tasks\')">'
       +asgSel+propSel+prioSel+grpSel
-      +'<button class="btn sm" style="margin-left:auto" onclick="openForm(\'tasks\')">Add task</button>'
+      +'<button class="btn ghost sm" style="margin-left:auto" onclick="icsAllTasks()" title="Download all dated tasks as a calendar file for Google or Apple Calendar">Sync calendar</button>'
+      +'<button class="btn sm" onclick="openForm(\'tasks\')">Add task</button>'
     +'</div>'
     +(statusChips?'<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">'+statusChips+'</div>':"");
 }
+/* ---------- team notifications (fires the task webhook -> n8n -> Slack/email/etc) ---------- */
+function notifyTask(event,t,extra){
+  try{
+    const cfg=db("integrationConfig",{webhooks:{}}); const url=(cfg.webhooks||{}).task||"";
+    if(!url||!t) return;
+    const payload={ event:event, at:nowISO(),
+      by:(typeof sessionUser!=="undefined"&&sessionUser?sessionUser.name:""),
+      task:{ id:t.id, title:t.title, status:t.status, priority:t.priority||"P3",
+        assignee:t.assignee||"", collaborators:Array.isArray(t.collaborators)?t.collaborators:[],
+        property:(t.property?propName(t.property):"Tropical Stays"), due:t.due||"", notes:t.notes||"" },
+      tenant:(typeof CLOUD!=="undefined"?CLOUD.tenant:"tropical_stays"),
+      url:(typeof location!=="undefined"?location.href:"") };
+    if(extra) payload.change=extra;
+    fetch(url,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind:"task",at:nowISO(),payload:payload})}).catch(function(){});
+  }catch(e){}
+}
+/* ---------- one-click calendar export: all dated tasks as one .ics ---------- */
+function icsAllTasks(){
+  const list=db("tasks",[]).filter(t=>t.due && t.status!=="done" && t.status!=="cancelled");
+  if(!list.length){ toast("No dated open tasks to export."); return; }
+  const clean=s=>String(s||"").replace(/[\r\n,;]/g," ");
+  const ev=list.map(t=>{ const s=t.due.replace(/-/g,""); const e=dateAdd(t.due,1).replace(/-/g,"");
+    const summ=clean("["+(t.priority||"P3")+"] "+(t.title||""));
+    const desc=clean((t.assignee?"Owner: "+t.assignee+". ":"")+(t.property?propName(t.property)+". ":"")+(t.notes||""));
+    return ["BEGIN:VEVENT","UID:"+t.id+"@tropicalstays","DTSTART;VALUE=DATE:"+s,"DTEND;VALUE=DATE:"+e,"SUMMARY:"+summ,"DESCRIPTION:"+desc,"END:VEVENT"].join("\r\n");
+  });
+  const ics=["BEGIN:VCALENDAR","VERSION:2.0","PRODID:-//Tropical Stays//Ops Hub//EN","X-WR-CALNAME:Tropical Stays Tasks"].concat(ev).concat(["END:VCALENDAR"]).join("\r\n");
+  const b=new Blob([ics],{type:"text/calendar"}); const a=document.createElement("a"); a.href=URL.createObjectURL(b); a.download="tropical-stays-tasks.ics"; a.click();
+  toast(list.length+" tasks exported. Import into Google or Apple Calendar.");
+}
+
 function viewTasks(){
   const head0=head("Board, calendar, subtasks","Tasks","Click any task to open it. Change status inline. Company tasks use Tropical Stays, everything else ties to a property.");
   const body= taskФ.view==="board"?taskBoard():taskФ.view==="calendar"?taskCalendar():taskList();
@@ -2395,6 +2450,189 @@ function viewContacts(){
 }
 let contactФ={q:"",role:""};
 
+/* ============================================================
+   FAQ KNOWLEDGE HUB  (card grid + filters + log-FAQ modal)
+   Data: db("faqs") = [{id, applies, category, question, answer}]
+   ============================================================ */
+let faqState={view:"cards",prop:"",cat:"",q:""};
+let faqDraft=null;
+const FAQ_KNOWN_PROPS=[["All","All Properties (Universal)","Applies across every listing"],["Cairns One","Cairns One","Property specific rule"],["Standalone houses","Standalone houses","Property specific rule"],["Pool homes","Pool homes","Property specific rule"],["Harbour Lights","Harbour Lights","Property specific rule"]];
+const FAQ_MOD_CATS=["Access","Housekeeping","Luggage","Timing","Parking","Pool","Payment","Maintenance"];
+const FAQ_CAT_COLORS={"Access":["#1f7a52","rgba(31,157,87,.12)"],"Housekeeping":["#7c3aed","rgba(124,58,237,.12)"],"Luggage":["#a16207","rgba(161,98,7,.12)"],"Timing":["#475569","rgba(71,85,105,.12)"],"Parking":["#2563eb","rgba(37,99,235,.12)"],"Pool":["#0891b2","rgba(8,145,178,.12)"],"Payment":["#dc2626","rgba(220,38,38,.12)"],"Maintenance":["#d97706","rgba(217,119,6,.12)"],"Amenities":["#0d9488","rgba(13,148,136,.12)"],"Check-in":["#2563eb","rgba(37,99,235,.12)"],"Check-out":["#7c3aed","rgba(124,58,237,.12)"],"Wifi":["#0891b2","rgba(8,145,178,.12)"],"General":["#6b7280","rgba(107,114,128,.12)"]};
+function faqCatColor(c){ return FAQ_CAT_COLORS[c]||["#6b7280","rgba(107,114,128,.12)"]; }
+function faqStyle(){ return '<style>'
+  +'.faqgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px}'
+  +'.faqcard{background:var(--card);border:1px solid var(--line);border-radius:var(--r2);padding:15px;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(17,26,36,.04)}'
+  +'.faqcard .tags{display:flex;justify-content:space-between;gap:8px;margin-bottom:10px}'
+  +'.faqtag{font-size:10.5px;font-weight:600;padding:3px 9px;border-radius:20px;border:1px solid transparent;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}'
+  +'.faqcard h4{font-size:14px;font-weight:600;margin:0 0 7px;line-height:1.3;color:var(--ink)}'
+  +'.faqcard .ans{font-size:12.5px;color:var(--ink2);line-height:1.5;flex:1;white-space:pre-wrap}'
+  +'.faqcard .foot{display:flex;align-items:center;gap:8px;margin-top:12px;padding-top:11px;border-top:1px solid var(--line)}'
+  +'.faqcopy{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--dgreen);background:var(--sage-l);border:1px solid var(--sage-b);border-radius:var(--r);padding:6px 11px;cursor:pointer}'
+  +'.faqcopy:hover{background:var(--ok-l)}'
+  +'.faqact{margin-left:auto;display:flex;gap:4px}'
+  +'.faqact button{background:transparent;border:none;color:var(--muted);cursor:pointer;font-size:11.5px;padding:4px 6px;border-radius:6px}'
+  +'.faqact button:hover{color:var(--ink);background:var(--bg)}'
+  +'.faqfilters{display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px}'
+  +'.faqchip{font-size:11.5px;padding:5px 11px;border-radius:20px;border:1px solid var(--line);background:var(--card);color:var(--ink2);cursor:pointer;white-space:nowrap}'
+  +'.faqchip.on{background:var(--dgreen);color:#fff;border-color:var(--dgreen)}'
+  +'.faqlbl{font:9px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-right:2px}'
+  +'.faqrgrid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}'
+  +'.faqradio{display:flex;gap:10px;align-items:center;padding:12px 13px;border:1.5px solid var(--line);border-radius:var(--r2);cursor:pointer}'
+  +'.faqradio.on{border-color:var(--dgreen);background:var(--sage-l)}'
+  +'.faqradio .rt{font-weight:600;color:var(--ink);font-size:13px}'
+  +'.faqradio .rs{font-size:11px;color:var(--muted)}'
+  +'.faqmodchip{font-size:12px;padding:7px 12px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink2);cursor:pointer}'
+  +'.faqmodchip.on{background:var(--ink);color:#fff;border-color:var(--ink)}'
+  +'@media(max-width:600px){.faqgrid{grid-template-columns:1fr}.faqrgrid{grid-template-columns:1fr}}'
+  +'</style>'; }
+
+function faqAppliesList(){ const groups=new Set(),specifics=new Set(); db("faqs",[]).forEach(f=>{ if(f.applies&&f.applies!=="All")groups.add(f.applies); (Array.isArray(f.scope)?f.scope:[]).forEach(id=>{ const nm=propName(id); if(nm&&nm!=="-")specifics.add(nm); }); }); return {groups:[...groups].sort(),specifics:[...specifics].sort()}; }
+function faqCatsList(){ const s=new Set(); db("faqs",[]).forEach(f=>{ if(f.category) s.add(f.category); }); return [...s].sort(); }
+function faqFiltered(){
+  const q=(faqState.q||"").toLowerCase(); const pf=faqState.prop;
+  return db("faqs",[]).filter(f=>{
+    if(pf){ const names=(Array.isArray(f.scope)?f.scope:[]).map(id=>propName(id)); if(!(f.applies===pf||f.applies==="All"||names.indexOf(pf)>=0)) return false; }
+    if(faqState.cat && f.category!==faqState.cat) return false;
+    if(q && ((f.question||"")+" "+(f.answer||"")+" "+(f.category||"")+" "+(f.applies||"")).toLowerCase().indexOf(q)<0) return false;
+    return true;
+  });
+}
+function faqSetView(v){ faqState.view=v; renderPage("faqs"); }
+function faqSetProp(p){ faqState.prop=p; renderPage("faqs"); }
+function faqSetCat(c){ faqState.cat=c; renderPage("faqs"); }
+
+function faqCard(f){
+  const pc=faqCatColor(f.category); const scope=Array.isArray(f.scope)?f.scope:[];
+  let left;
+  if(scope.length){
+    left=scope.slice(0,2).map(id=>'<span class="faqtag" style="color:var(--ink2);background:var(--bg);border-color:var(--line)">'+esc(propName(id))+'</span>').join("")
+      +(scope.length>2?'<span class="faqtag" style="color:var(--muted);background:var(--bg);border-color:var(--line)">+'+(scope.length-2)+'</span>':"");
+  } else {
+    left=f.applies==="All"
+      ? '<span class="faqtag" style="color:var(--dgreen);background:var(--sage-l);border-color:var(--sage-b)">All Properties</span>'
+      : '<span class="faqtag" style="color:var(--ink2);background:var(--bg);border-color:var(--line)">'+esc(f.applies||"Property")+'</span>';
+  }
+  const catTag='<span class="faqtag" style="color:'+pc[0]+';background:'+pc[1]+'">'+esc(f.category||"General")+'</span>';
+  return '<div class="faqcard">'
+    +'<div class="tags"><div style="display:flex;gap:5px;flex-wrap:wrap">'+left+'</div>'+catTag+'</div>'
+    +'<h4>'+esc(f.question||"")+'</h4>'
+    +'<div class="ans">'+esc(f.answer||"")+'</div>'
+    +'<div class="foot"><button class="faqcopy" onclick="faqCopy(\''+f.id+'\')">Copy answer</button>'
+      +'<span class="faqact"><button title="Edit" onclick="faqForm(\''+f.id+'\')">Edit</button><button title="Delete" onclick="faqDelete(\''+f.id+'\')">Delete</button></span></div>'
+    +'</div>';
+}
+function faqByCat(list){
+  const g={}; list.forEach(f=>{ const c=f.category||"General"; (g[c]=g[c]||[]).push(f); });
+  return Object.keys(g).sort().map(cat=>{ const pc=faqCatColor(cat);
+    return '<div style="margin-bottom:18px"><div class="sechd"><h3 style="color:'+pc[0]+'">'+esc(cat)+'</h3><span class="ct">'+g[cat].length+'</span></div><div class="faqgrid">'+g[cat].map(faqCard).join("")+'</div></div>';
+  }).join("");
+}
+function faqSheet(list){
+  const rows=list.map(f=>'<tr>'
+    +'<td>'+(f.applies==="All"?'<span class="chip sage">All</span>':'<span class="chip">'+esc(f.applies||"")+'</span>')+'</td>'
+    +'<td><span class="chip">'+esc(f.category||"")+'</span></td>'
+    +'<td><b>'+esc(f.question||"")+'</b></td><td class="muted">'+esc(f.answer||"")+'</td>'
+    +'<td style="white-space:nowrap"><button class="btn ghost sm" onclick="faqCopy(\''+f.id+'\')">Copy</button> <button class="btn ghost sm" onclick="faqForm(\''+f.id+'\')">Edit</button></td></tr>').join("");
+  return '<div class="card tight"><div class="wrap"><table class="tbl"><thead><tr><th>Property</th><th>Category</th><th>Question</th><th>Answer</th><th>Actions</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>';
+}
+function faqCopy(id){ const f=db("faqs",[]).find(x=>x.id===id); if(f) copyText(f.answer||"","Answer copied for guest chat."); }
+
+function viewFaqs(){
+  const all=db("faqs",[]);
+  const total=all.length, univ=all.filter(f=>f.applies==="All").length, spec=total-univ;
+  const cats=faqCatsList(); const shown=faqFiltered();
+  const strip='<div class="kpis">'
+    +kpi("Total FAQs",total,"knowledge entries",true)
+    +kpi("All properties",univ,"universal rules")
+    +kpi("Property specific",spec,"tied to a group")
+    +kpi("Categories",cats.length,"topics covered")
+    +'</div>';
+  const toolbar='<div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'
+    +'<input class="inp" style="flex:1;min-width:200px" placeholder="Search a question, keyword, category..." value="'+esc(faqState.q)+'" oninput="faqState.q=this.value;renderPage(\'faqs\')">'
+    +viewSeg(faqState.view,[["cards","Cards"],["category","By category"],["sheet","Data sheet"]],"faqSetView")
+    +'<button class="btn sm" onclick="faqForm()">Log FAQ</button></div>';
+  const pa=faqAppliesList();
+  const propChips='<div class="faqfilters"><span class="faqlbl">Property</span>'
+    +'<span class="faqchip'+(faqState.prop===""?" on":"")+'" onclick="faqSetProp(\'\')">All properties</span>'
+    +pa.groups.map(a=>'<span class="faqchip'+(faqState.prop===a?" on":"")+'" onclick="faqSetProp(\''+esc(a)+'\')">'+esc(a)+'</span>').join("")
+    +pa.specifics.map(a=>'<span class="faqchip'+(faqState.prop===a?" on":"")+'" onclick="faqSetProp(\''+esc(a)+'\')" title="Specific property">'+esc(a)+'</span>').join("")+'</div>';
+  const catChips='<div class="faqfilters"><span class="faqlbl">Category</span>'
+    +'<span class="faqchip'+(faqState.cat===""?" on":"")+'" onclick="faqSetCat(\'\')">All</span>'
+    +cats.map(c=>'<span class="faqchip'+(faqState.cat===c?" on":"")+'" onclick="faqSetCat(\''+esc(c)+'\')">'+esc(c)+'</span>').join("")+'</div>';
+  let body;
+  if(!shown.length){ body='<div class="card"><div class="empty"><h4>No FAQs match</h4><p>Clear the filters, or log a new entry.</p></div></div>'; }
+  else if(faqState.view==="sheet"){ body=faqSheet(shown); }
+  else if(faqState.view==="category"){ body=faqByCat(shown); }
+  else { body='<div class="faqgrid">'+shown.map(faqCard).join("")+'</div>'; }
+  return faqStyle()
+    +head("Instant guest answers, property rules, citations","FAQs & Knowledge Hub","Click any answer to copy it for guest chat or email. Everything here saves and syncs to the team.")
+    +strip+toolbar+propChips+catChips
+    +'<div class="muted" style="font-size:11px;margin:2px 0 12px">Showing '+shown.length+' of '+total+' FAQs</div>'
+    +body;
+}
+
+/* ---------- log / edit FAQ modal ---------- */
+function faqForm(id){
+  if(!requireEdit("faqs"))return;
+  const ex=id?db("faqs",[]).find(x=>x.id===id):null;
+  faqDraft={id:ex?ex.id:null,applies:ex?(ex.applies||"All"):"All",category:ex?(ex.category||"Access"):"Access",question:ex?(ex.question||""):"",answer:ex?(ex.answer||""):"",other:"",scope:(ex&&Array.isArray(ex.scope))?ex.scope.slice():[]};
+  const known=FAQ_KNOWN_PROPS.map(k=>k[0]);
+  if(faqDraft.applies && known.indexOf(faqDraft.applies)<0){ faqDraft.other=faqDraft.applies; faqDraft.applies=""; }
+  faqModalRender();
+}
+function faqSync(){
+  if(!faqDraft) return;
+  const q=document.getElementById("faq_q"), a=document.getElementById("faq_a"), o=document.getElementById("faq_other");
+  if(q) faqDraft.question=q.value;
+  if(a) faqDraft.answer=a.value;
+  if(o) faqDraft.other=o.value;
+}
+function faqPick(field,val){ faqSync(); faqDraft[field]=val; if(field==="applies") faqDraft.other=""; faqModalRender(); }
+function faqInsert(kind){ faqSync(); const a=document.getElementById("faq_a"); if(!a)return; a.value=(a.value||"")+(kind==="link"?" https://":" [Photo: https://...]"); faqDraft.answer=a.value; a.focus(); }
+function faqScopeToggle(id,on){ if(!faqDraft)return; faqDraft.scope=Array.isArray(faqDraft.scope)?faqDraft.scope:[]; const i=faqDraft.scope.indexOf(id); if(on&&i<0)faqDraft.scope.push(id); if(!on&&i>=0)faqDraft.scope.splice(i,1); }
+function faqScopeFilter(v){ v=(v||"").toLowerCase(); const box=document.getElementById("faqScope"); if(!box)return; box.querySelectorAll(".scoperow").forEach(r=>{ r.style.display=(!v||(r.dataset.name||"").indexOf(v)>=0)?"":"none"; }); }
+function faqModalRender(){
+  const d=faqDraft;
+  const radios=FAQ_KNOWN_PROPS.map(k=>'<div class="faqradio'+((!d.other&&d.applies===k[0])?" on":"")+'" onclick="faqPick(\'applies\',\''+k[0]+'\')"><div><div class="rt">'+esc(k[1])+'</div><div class="rs">'+esc(k[2])+'</div></div></div>').join("");
+  const chips=FAQ_MOD_CATS.map(c=>'<span class="faqmodchip'+(d.category===c?" on":"")+'" onclick="faqPick(\'category\',\''+c+'\')">'+esc(c)+'</span>').join("");
+  const body=faqStyle()
+    +'<div class="faqlbl" style="display:block;margin-bottom:7px">Applies to property</div>'
+    +'<div class="faqrgrid">'+radios+'</div>'
+    +'<input class="inp" id="faq_other" placeholder="Or type another property name" value="'+esc(d.other||"")+'" oninput="faqDraft.other=this.value" style="margin-bottom:10px">'
+    +'<div class="faqlbl" style="display:block;margin-bottom:6px">Or tag specific properties (optional)</div>'
+    +'<input class="inp" placeholder="Filter properties" oninput="faqScopeFilter(this.value)" style="margin-bottom:6px">'
+    +'<div id="faqScope" class="scope-list" style="max-height:170px;overflow:auto;border:1px solid var(--line);border-radius:var(--r);padding:6px 8px;margin-bottom:14px">'
+    +props().slice().sort((a,b)=>a.nickname.localeCompare(b.nickname)).map(p=>'<label class="chkline scoperow" data-name="'+esc(p.nickname.toLowerCase())+'"><input type="checkbox" '+((Array.isArray(d.scope)&&d.scope.indexOf(p.id)>=0)?"checked":"")+' onchange="faqScopeToggle(\''+p.id+'\',this.checked)"><span>'+esc(p.nickname)+'</span></label>').join("")
+    +'</div>'
+    +'<div class="faqlbl" style="display:block;margin-bottom:7px">Category</div>'
+    +'<div style="display:flex;gap:7px;flex-wrap:wrap;margin-bottom:14px">'+chips+'</div>'
+    +'<div class="field"><label>Question</label><input class="inp" id="faq_q" placeholder="e.g. How do we access the gated garage?" value="'+esc(d.question||"")+'"></div>'
+    +'<div class="field"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px"><label style="margin:0">Answer (text, links, or photos)</label>'
+      +'<span><button class="btn ghost sm" onclick="faqInsert(\'link\')">+ Link</button> <button class="btn ghost sm" onclick="faqInsert(\'photo\')">+ Photo</button></span></div>'
+      +'<textarea class="inp" id="faq_a" style="min-height:110px" placeholder="Clear, concise instructions for the guest. Paste URLs or insert a [Photo: URL] tag.">'+esc(d.answer||"")+'</textarea></div>';
+  const foot=(d.id?'<button class="btn ghost" style="margin-right:auto;color:var(--alert)" onclick="faqDelete(\''+d.id+'\')">Delete</button>':"")
+    +'<button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="faqSave()">'+(d.id?"Save changes":"Add FAQ")+'</button>';
+  openModal(d.id?"Edit FAQ entry":"Log new FAQ entry",body,foot);
+}
+function faqSave(){
+  faqSync(); const d=faqDraft; if(!d) return;
+  const applies=(d.other&&d.other.trim())?d.other.trim():d.applies;
+  const q=(d.question||"").trim(), a=(d.answer||"").trim();
+  if(!applies){ toast("Pick a property or type one."); return; }
+  if(!q){ toast("Add a question."); return; }
+  if(!a){ toast("Add an answer."); return; }
+  const list=db("faqs",[]);
+  const scope=Array.isArray(d.scope)?d.scope:[];
+  if(d.id){ const f=list.find(x=>x.id===d.id); if(f){ f.applies=applies; f.category=d.category; f.question=q; f.answer=a; f.scope=scope; f.updated=nowISO(); } }
+  else { list.push({id:uid("faq"),applies:applies,category:d.category,question:q,answer:a,scope:scope,created:nowISO(),updated:nowISO()}); }
+  save("faqs",list); faqDraft=null; closeModal(); renderPage("faqs"); toast("FAQ saved.");
+}
+function faqDelete(id){
+  if(!requireEdit("faqs"))return;
+  save("faqs",db("faqs",[]).filter(x=>x.id!==id)); faqDraft=null; closeModal(); renderPage("faqs"); toast("FAQ removed.");
+}
+
 function viewGeneric(store){
   const meta={sops:["SOPs","Repeatable procedures","Every process you shadow becomes a 3-step SOP a new hire can run without you.",[["task","Task"],["system","System"],["owner","Owner"],["failure","Failure mode"]]],
     workflows:["Workflows","Automations and triggers","Trigger to action mapping. Native Guesty or SuiteOp first, then n8n, then Apps Script, then manual.",[["trigger","Trigger"],["action","Action"],["tool","Tool"],["notes","Notes"]]],
@@ -2418,7 +2656,7 @@ function genericList(store,title,eyebrow,sub,cols){
 /* ============================================================
    FORM ENGINE
    ============================================================ */
-function contactNames(){ return db("contacts",[]).map(c=>c.name).filter(Boolean).sort((a,b)=>a.localeCompare(b)); }
+function contactNames(){ const s=new Set(); db("users",[]).forEach(u=>{ if(u.name)s.add(u.name); }); db("contacts",[]).forEach(c=>{ if(c.name)s.add(c.name); }); return [...s].sort((a,b)=>a.localeCompare(b)); }
 const COLLECTIONS={
   properties:{singular:"Property",fields:[
     ["_h1","01 Property basics","heading"],
