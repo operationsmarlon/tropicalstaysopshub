@@ -517,6 +517,12 @@ textarea.inp{resize:vertical;min-height:64px}
 .card{box-shadow:0 1px 2px rgba(17,26,36,.04),0 1px 3px rgba(17,26,36,.05)}
 .chip,.pill{font-weight:600}
 .btn{font-weight:600}
+/* global search results */
+.srch-grp{font:9px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:12px 0 5px}
+.srch-row{padding:9px 11px;border:1px solid var(--line);border-radius:var(--r);margin-bottom:6px;cursor:pointer;background:var(--card)}
+.srch-row:hover{border-color:var(--dgreen);background:var(--sage-l)}
+.srch-t{font-size:13px;font-weight:600;color:var(--ink)}
+.srch-x{font-size:11.5px;color:var(--muted);margin-top:3px;line-height:1.4}
 </style>
 </head>
 <body>
@@ -560,7 +566,7 @@ textarea.inp{resize:vertical;min-height:64px}
         <div class="tb-crumb" id="crumb">Operations</div>
         <div class="tb-title" id="title">Dashboard</div>
       </div>
-      <div class="tb-right">
+      <div class="tb-right"><button class="tb-search" onclick="openSearch()" title="Search the hub (Ctrl or Cmd K)" aria-label="Search" style="background:var(--card);border:1px solid var(--line2);border-radius:var(--r);width:36px;height:36px;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;margin-right:2px"><svg viewBox="0 0 24 24" style="width:18px;height:18px;stroke:var(--ink2);stroke-width:2;fill:none;stroke-linecap:round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4-4"></path></svg></button>
         <div class="clk"><div class="z">PH Manila</div><div class="t" id="clkPH">--:--:--</div><div class="d" id="dayPH"></div></div>
         <div class="clk-div"></div>
         <div class="clk"><div class="z">AEST Cairns</div><div class="t" id="clkAU">--:--:--</div><div class="d" id="dayAU"></div></div>
@@ -995,6 +1001,86 @@ function renderPage(k){
   if(pageAfter[k]) pageAfter[k]();
 }
 const pageAfter={};
+
+/* ============================================================
+   GLOBAL HUB SEARCH  (Cmd/Ctrl+K or the top-bar search button)
+   Scans every collection, groups results, jumps to the record.
+   ============================================================ */
+const SEARCH_MAP=[
+  {store:"properties",tab:"props",singular:"Property",label:"nickname",open:id=>openProp(id)},
+  {store:"tasks",tab:"tasks",singular:"Task",label:"title",propRef:"property",open:id=>openTask(id)},
+  {store:"contacts",tab:"contacts",singular:"Contact",label:"name",propRef:"property",open:id=>openContact(id)},
+  {store:"shieldClaims",tab:"shield",singular:"Claim",label:"guestName",propRef:"listing",open:id=>shieldOpen(id)},
+  {store:"faqs",tab:"faqs",singular:"FAQ",label:"question",scope:"scope",open:id=>faqForm(id)},
+  {store:"quickReplies",tab:"quick",singular:"Quick reply",label:"title",scope:"scope",form:true},
+  {store:"sops",tab:"sops",singular:"SOP",label:"task",form:true},
+  {store:"workflows",tab:"flows",singular:"Workflow",label:"trigger",form:true},
+  {store:"guestComms",tab:"guest",singular:"Template",label:"name",form:true},
+  {store:"resources",tab:"resources",singular:"Resource",label:"name",scope:"scope",form:true},
+  {store:"maintenance",tab:"maint",singular:"Maintenance",label:"issue",propRef:"property",form:true},
+  {store:"servicing",tab:"serv",singular:"Servicing",label:"type",propRef:"property",form:true},
+  {store:"pipeline",tab:"pipe",singular:"Pipeline",label:"step",propRef:"property",form:true},
+  {store:"reviews",tab:"reviews",singular:"Review",label:"guest",propRef:"property",form:true},
+  {store:"consumables",tab:"consum",singular:"Consumable",label:"item",propRef:"property",form:true},
+  {store:"users",tab:"team",singular:"Team member",label:"name"},
+  {store:"midstay",tab:"midstay",singular:"Mid-stay clean",label:"guest",propRef:"listingId"}
+];
+function hubRecText(rec,cfg){
+  const parts=[];
+  Object.keys(rec).forEach(k=>{ const v=rec[k];
+    if(typeof v==="string"||typeof v==="number") parts.push(String(v));
+    else if(Array.isArray(v)) v.forEach(x=>{ if(typeof x==="string") parts.push(x); else if(x&&typeof x==="object") parts.push(Object.values(x).filter(y=>typeof y==="string").join(" ")); });
+  });
+  if(cfg.propRef && rec[cfg.propRef]) parts.push(propName(rec[cfg.propRef]));
+  if(cfg.scope && Array.isArray(rec[cfg.scope])) parts.push(rec[cfg.scope].map(id=>propName(id)).join(" "));
+  return parts.join("  ");
+}
+function hubLabel(rec,cfg){ return rec[cfg.label]||rec.title||rec.name||rec.question||rec.nickname||rec.issue||rec.guest||"Item"; }
+function hubExcerpt(text,q){ const i=text.toLowerCase().indexOf(q); if(i<0)return""; const s=Math.max(0,i-28); return (s>0?"...":"")+text.slice(s,i+q.length+52).replace(/\s+/g," ").trim()+"..."; }
+function hubSearch(q){
+  q=(q||"").trim().toLowerCase(); const out=[]; if(q.length<2) return out;
+  SEARCH_MAP.forEach((cfg,ci)=>{
+    (db(cfg.store,[])||[]).forEach(rec=>{
+      const text=hubRecText(rec,cfg);
+      if(text.toLowerCase().indexOf(q)>=0){
+        out.push({ci:ci,id:rec.id,type:cfg.singular,label:hubLabel(rec,cfg),
+          ctx:(cfg.propRef&&rec[cfg.propRef])?propName(rec[cfg.propRef]):(rec.category||rec.applies||rec.role||""),
+          excerpt:hubExcerpt(text,q)});
+      }
+    });
+  });
+  return out;
+}
+function openSearch(){
+  if(typeof sessionUser==="undefined"||!sessionUser) return;
+  const body='<input class="inp" id="hubQ" placeholder="Search everything: wifi, a name, a property, a code..." oninput="renderSearch(this.value)" autocomplete="off" style="font-size:16px;padding:11px 13px;margin-bottom:12px">'
+    +'<div id="hubResults" style="max-height:58vh;overflow:auto"><div class="muted" style="font-size:12px;padding:6px 2px">Start typing to search the whole hub. Two letters minimum.</div></div>';
+  openModal("Search the hub",body,"");
+  setTimeout(()=>{ const el=document.getElementById("hubQ"); if(el) el.focus(); },40);
+}
+function renderSearch(q){
+  const box=document.getElementById("hubResults"); if(!box) return;
+  if((q||"").trim().length<2){ box.innerHTML='<div class="muted" style="font-size:12px;padding:6px 2px">Two letters minimum.</div>'; return; }
+  const res=hubSearch(q);
+  if(!res.length){ box.innerHTML='<div class="empty" style="padding:20px"><h4>No matches</h4><p>Nothing in the hub matches "'+esc(q)+'".</p></div>'; return; }
+  const groups={}; res.forEach(r=>{ (groups[r.type]=groups[r.type]||[]).push(r); });
+  let html='<div class="muted" style="font-size:11px;margin-bottom:6px">'+res.length+' result'+(res.length===1?"":"s")+'</div>';
+  Object.keys(groups).forEach(type=>{
+    html+='<div class="srch-grp">'+esc(type)+' <span class="muted">'+groups[type].length+'</span></div>';
+    groups[type].slice(0,12).forEach(r=>{
+      html+='<div class="srch-row" onclick="hubGo('+r.ci+',\''+esc(r.id)+'\')">'
+        +'<div class="srch-t">'+esc(r.label)+(r.ctx?' <span class="muted" style="font-weight:400">'+esc(r.ctx)+'</span>':'')+'</div>'
+        +(r.excerpt?'<div class="srch-x">'+esc(r.excerpt)+'</div>':'')+'</div>';
+    });
+    if(groups[type].length>12) html+='<div class="muted" style="font-size:11px;padding:2px 4px 6px">plus '+(groups[type].length-12)+' more</div>';
+  });
+  box.innerHTML=html;
+}
+function hubGo(ci,id){
+  const cfg=SEARCH_MAP[ci]; if(!cfg) return; closeModal(); go(cfg.tab);
+  setTimeout(()=>{ try{ if(cfg.open) cfg.open(id); else if(cfg.form) openForm(cfg.store,id); }catch(e){} },40);
+}
+document.addEventListener("keydown",function(e){ if((e.metaKey||e.ctrlKey)&&(e.key==="k"||e.key==="K")){ e.preventDefault(); openSearch(); } });
 
 function head(eyebrow,title,sub){
   return '<div class="pg-head"><div class="pg-eyebrow">'+esc(eyebrow)+'</div><div class="pg-title">'+esc(title)+'</div>'+(sub?'<div class="pg-sub">'+sub+'</div>':"")+'</div>';
