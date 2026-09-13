@@ -930,6 +930,7 @@ const NAV=[
     {k:"tasks",label:"Tasks",icon:"task",crumb:"Overview",badge:"tasks"},
     {k:"daily",label:"Daily tasks",icon:"clock",crumb:"Overview"},
     {k:"transcript",label:"Transcript to tasks",icon:"task",crumb:"Overview"},
+    {k:"notif",label:"Notifications",icon:"chat",crumb:"Overview",badge:"notif"},
   ]},
   {grp:"Operations", items:[
     {k:"coverage",label:"Shift & coverage",icon:"clock",crumb:"Operations"},
@@ -1017,7 +1018,7 @@ function updateNavBadges(){
   const m=db("maintenance",[]).filter(x=>x.status!=="Done").length;
   const today=todayAU();
   const so=db("servicing",[]).filter(x=>x.status!=="Done"&&x.nextDue&&x.nextDue<today).length;
-  setBadge("tasks",t,tp>0); setBadge("maint",m,db("maintenance",[]).some(x=>x.needsApproval&&x.status!=="Done")); setBadge("serv",so,so>0);
+  setBadge("tasks",t,tp>0); setBadge("maint",m,db("maintenance",[]).some(x=>x.needsApproval&&x.status!=="Done")); setBadge("serv",so,so>0); try{const nu=notifUnread(currentUserName()); setBadge("notif",nu,nu>0);}catch(e){}
   document.getElementById("footProps").textContent=db("properties",[]).length;
 }
 function setBadge(id,n,warn){ const el=document.getElementById("nbc_"+id); if(!el)return; if(!n){ el.style.display="none"; return; } el.style.display=""; el.textContent=n; el.classList.toggle("warn",!!warn); }
@@ -1035,7 +1036,7 @@ function renderPage(k){
   const map={myday:viewMyDay,daily:viewDaily,transcript:viewTranscript,coverage:viewCoverage,midstay:viewMidstay,dash:viewDash,tasks:viewTasks,maint:viewMaint,serv:viewServ,props:viewProps,pipe:viewPipe,
     sops:()=>viewGeneric("sops"),flows:()=>viewGeneric("workflows"),guest:()=>viewGeneric("guestComms"),
     quick:()=>viewGeneric("quickReplies"),faqs:()=>viewFaqs(),resources:()=>viewGeneric("resources"),
-    team:viewTeam,sheets:viewSheets,eod:viewEOD,reviews:()=>viewGeneric("reviews"),owners:viewOwners,revanalytics:viewReviewsAnalysis,balances:viewBalances,groups:viewGroups,linen:viewLinen,consum:viewConsumables,shield:viewShield,edit:viewEdit,contacts:viewContacts};
+    team:viewTeam,sheets:viewSheets,eod:viewEOD,reviews:viewReviews,notif:viewNotif,owners:viewOwners,revanalytics:viewReviewsAnalysis,balances:viewBalances,groups:viewGroups,linen:viewLinen,consum:viewConsumables,shield:viewShield,edit:viewEdit,contacts:viewContacts};
   document.getElementById("page").innerHTML=(map[k]||viewDash)();
   updateNavBadges();
   syncEditLockBtn();
@@ -1800,6 +1801,7 @@ function taskToolbar(){
 }
 /* ---------- team notifications (fires the task webhook -> n8n -> Slack/email/etc) ---------- */
 function notifyTask(event,t,extra){
+  try{ notifInApp(event,t,extra); }catch(e){}
   try{
     const cfg=db("integrationConfig",{webhooks:{}}); const url=(cfg.webhooks||{}).task||"";
     if(!url||!t) return;
@@ -1846,16 +1848,24 @@ function taskCard(t,ctx){
 }
 function taskList(){
   const list=taskFilters(db("tasks",[])).sort((a,b)=>(a.due||"9999").localeCompare(b.due||"9999"));
-  const today=todayAU();
-  const rows=list.map(t=>{ const od=taskActive(t)&&t.due&&t.due<today; const dt=taskActive(t)&&t.due===today; const sp=subProgress(t);
-    return '<tr class="clickrow" onclick="openTask(\''+t.id+'\')"><td><b>'+esc(t.title)+'</b>'+(sp.total?' <span class="muted mono" style="font-size:10px">'+sp.done+'/'+sp.total+'</span>':'')+((t.updates&&t.updates.length)?' <span class="chip" style="padding:0 5px" title="updates">'+t.updates.length+' upd</span>':'')+'</td>'
-      +'<td>'+(t.property?esc(propName(t.property)):'<span class="chip sage">Tropical Stays</span>')+'</td>'
-      +'<td><span class="chip '+(t.priority==="P1"?"alert":t.priority==="P2"?"warn":"")+'">'+esc(t.priority||"P3")+'</span></td>'
-      +'<td>'+esc(t.assignee||"-")+(Array.isArray(t.collaborators)&&t.collaborators.length?' <span class="chip" style="padding:0 5px" title="'+esc(t.collaborators.join(", "))+'">+'+t.collaborators.length+'</span>':"")+'</td>'
-      +'<td class="mono" style="color:'+(od?"var(--alert)":dt?"var(--warn)":"var(--ink2)")+'">'+esc(t.due||"-")+(od?" overdue":dt?" today":"")+'</td>'
+  const today=todayAU(); const ids=list.map(t=>t.id); const selCount=ids.filter(i=>taskSel[i]).length;
+  const bar=selCount?'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:10px;padding:8px 10px;background:var(--card2,#f1f4ef);border-radius:8px"><b>'+selCount+' selected</b>'
+    +'<button class="btn ghost sm" onclick="taskSelClear()">Clear</button><span style="margin-left:auto"></span>'
+    +'<button class="btn ghost sm" onclick="taskBulkAssign()">Reassign</button>'
+    +'<button class="btn ghost sm" onclick="taskBulkStatus(\'done\')">Mark done</button>'
+    +'<button class="btn ghost sm" onclick="taskBulkStatus(\'cancelled\')">Cancel</button>'
+    +'<button class="btn danger sm" onclick="taskBulkDelete()">Delete selected</button></div>':'';
+  const allOn=ids.length&&ids.every(i=>taskSel[i]);
+  const rows=list.map(t=>{ const od=taskActive(t)&&t.due&&t.due<today; const dt=taskActive(t)&&t.due===today; const sp=subProgress(t); const o='onclick="openTask(\''+t.id+'\')"';
+    return '<tr class="clickrow"><td onclick="event.stopPropagation()" style="width:26px"><input type="checkbox" '+(taskSel[t.id]?"checked":"")+' onchange="taskSelToggle(\''+t.id+'\',this.checked)"></td>'
+      +'<td '+o+'><b>'+esc(t.title)+'</b>'+(sp.total?' <span class="muted mono" style="font-size:10px">'+sp.done+'/'+sp.total+'</span>':'')+((t.updates&&t.updates.length)?' <span class="chip" style="padding:0 5px">'+t.updates.length+' upd</span>':'')+'</td>'
+      +'<td '+o+'>'+(t.property?esc(propName(t.property)):'<span class="chip sage">Tropical Stays</span>')+'</td>'
+      +'<td '+o+'><span class="chip '+(t.priority==="P1"?"alert":t.priority==="P2"?"warn":"")+'">'+esc(t.priority||"P3")+'</span></td>'
+      +'<td '+o+'>'+esc(t.assignee||"-")+(Array.isArray(t.collaborators)&&t.collaborators.length?' <span class="chip" style="padding:0 5px">+'+t.collaborators.length+'</span>':"")+'</td>'
+      +'<td '+o+' class="mono" style="color:'+(od?"var(--alert)":dt?"var(--warn)":"var(--ink2)")+'">'+esc(t.due||"-")+(od?" overdue":dt?" today":"")+'</td>'
       +'<td onclick="event.stopPropagation()">'+taskStatusSelect(t.id,t.status)+'</td></tr>';
   }).join("");
-  return (rows?'<div class="card tight"><div class="wrap"><table class="tbl"><thead><tr><th>Task</th><th>Property</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Status</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
+  return bar+(rows?'<div class="card tight"><div class="wrap"><table class="tbl"><thead><tr><th style="width:26px"><input type="checkbox" '+(allOn?"checked":"")+' onchange="taskSelAllList()" title="Select all"></th><th>Task</th><th>Property</th><th>Priority</th><th>Assignee</th><th>Due</th><th>Status</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
       :'<div class="card"><div class="empty"><h4>No tasks here</h4><p>Add one, or clear filters. Recurring servicing lives under Maintenance.</p></div></div>');
 }
 function taskBoard(){
@@ -3062,14 +3072,14 @@ function saveForm(){
   const list=db(store,[]);
   if(id){ const i=list.findIndex(r=>r.id===id); if(i>=0){ const cu=collectCustom(store,list[i].custom); if(cu!==undefined)obj.custom=cu; list[i]=Object.assign(list[i],obj,{updated:nowISO()}); } }
   else { const cu=collectCustom(store,{}); if(cu!==undefined)obj.custom=cu; obj.id=uid(store==="properties"?"prop":store); obj.created=nowISO(); obj.updated=nowISO(); list.push(obj); }
-  save(store,list); logAct(id?"edit":"add",store,labelFor(store,obj)); closeModal(); toast("Saved."); renderPage(currentTab);
+  save(store,list); if(store==="tasks"&&!id&&obj.assignee){ try{notifyTask("created",obj);}catch(e){} } logAct(id?"edit":"add",store,labelFor(store,obj)); closeModal(); toast("Saved."); renderPage(currentTab);
 }
 function delRow(store,id,fromForm){
   if(!requireEdit(store))return;
   openModal("Delete","<p>Delete this "+esc((COLLECTIONS[store]||{}).singular||"item")+"? You can undo this from the Recent activity panel.</p>",
     '<button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn danger" onclick="doDel(\''+store+'\',\''+id+'\')">Delete</button>');
 }
-function doDel(store,id){ const rec=db(store,[]).find(r=>r.id===id); const label=labelFor(store,rec); if(rec) save("lastDeleted",{store,record:rec,label,at:nowISO()}); save(store, db(store,[]).filter(r=>r.id!==id)); logAct("delete",store,label); closeModal(); toast("Deleted. Undo from Recent activity."); renderPage(currentTab); }
+function doDel(store,id){ const rec=db(store,[]).find(r=>r.id===id); const label=labelFor(store,rec); if(rec) save("lastDeleted",{store,record:rec,label,at:nowISO()}); save(store, db(store,[]).filter(r=>r.id!==id)); if(store==="tasks"&&rec){ try{notifyTask("deleted",rec);}catch(e){} } logAct("delete",store,label); closeModal(); toast("Deleted. Undo from Recent activity."); renderPage(currentTab); }
 
 /* ============================================================
    MONEY HELPER (AUD)
@@ -4310,7 +4320,7 @@ function viewLinen(){
       +'<td>'+yn(p.id,"spareInsert")+'</td>'
       +'<td>'+yn(p.id,"spareProtector")+'</td>'
       +'<td>'+yn(p.id,"moistureBags")+'</td>'
-      +'<td><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" '+(done?"checked":"")+' onchange="linenDeep(\''+p.id+'\')" style="width:16px;height:16px;accent-color:var(--dgreen,#204f34)"><span class="muted" style="font-size:11px">'+(done?"Done "+ym:"Due")+'</span></label></td>'
+      +'<td><label style="display:inline-flex;align-items:center;gap:6px;cursor:pointer"><input type="checkbox" '+(done?"checked":"")+' onchange="linenDeep(\''+p.id+'\')" style="width:16px;height:16px;accent-color:var(--dgreen,#204f34)"><span class="muted" style="font-size:11px">'+(done?"Done "+ym:"Due")+'</span></label> <button class="btn ghost sm" onclick="linenTaskOne(\''+p.id+'\')" title="Create this month\'s deep-clean task for Julie">Task</button></td>'
       +'</tr>';
   }).join("");
   return head("Portfolio","Linen and supplies",
@@ -4362,6 +4372,75 @@ function tblSetColType(secId,subId,bid,ck,t){ const f=tblFind(secId,subId,bid); 
 function tblSaveOpts(secId,subId,bid,ck){ const f=tblFind(secId,subId,bid); const c=f.b.columns.find(x=>x.key===ck); c.options=val("col_opts").split("\n").map(s=>s.trim()).filter(Boolean); saveSections(f.list); toast("Options saved."); }
 function tblRenameCol(secId,subId,bid,ck){ nameModal("Rename column","Column name",(tblFind(secId,subId,bid).b.columns.find(x=>x.key===ck)||{}).label||"",function(name){ const f=tblFind(secId,subId,bid); f.b.columns.find(x=>x.key===ck).label=name||"Column"; saveSections(f.list); closeModal(); renderPage("sec:"+secId); }); }
 function tblDelCol(secId,subId,bid,ck){ confirmModal("Delete this column and its data?",function(){ const f=tblFind(secId,subId,bid); f.b.columns=(f.b.columns||[]).filter(x=>x.key!==ck); (f.b.rows||[]).forEach(r=>delete r[ck]); saveSections(f.list); closeModal(); renderPage("sec:"+secId); }); }
+
+/* ============================================================
+   IN-APP NOTIFICATIONS (task assignments and changes)
+   ============================================================ */
+function notifPush(to,text,meta){ if(!to)return; let me=currentUserName(); try{ if(typeof sessionUser!=="undefined"&&sessionUser&&sessionUser.name) me=sessionUser.name; }catch(e){} if(to===me)return;
+  const list=db("notifications",[]); list.push(Object.assign({id:uid("ntf"),to:to,text:text,read:false,by:me,created:nowISO()},meta||{})); save("notifications",list); }
+function notifFor(u){ return db("notifications",[]).filter(n=>n.to===u); }
+function notifUnread(u){ return notifFor(u).filter(n=>!n.read).length; }
+function notifInApp(event,t,extra){ if(!t)return;
+  if(event==="created" && t.assignee) notifPush(t.assignee,"New task assigned to you: "+t.title,{taskId:t.id});
+  else if(event==="updated" && extra && extra.field==="assignee" && extra.to) notifPush(extra.to,"Task assigned to you: "+t.title,{taskId:t.id});
+  else if(event==="status_changed" && t.assignee && extra && extra.to==="blocked") notifPush(t.assignee,"Task blocked: "+t.title,{taskId:t.id});
+  else if(event==="deleted" && t.assignee) notifPush(t.assignee,"Task deleted: "+t.title,{});
+  if(Array.isArray(t.collaborators) && (event==="created"||(event==="updated"&&extra&&extra.field==="assignee"))) t.collaborators.forEach(c=>notifPush(c,"You are a collaborator on: "+t.title,{taskId:t.id}));
+}
+function fmtWhen(iso){ if(!iso)return""; try{ return new Date(iso).toLocaleString("en-AU",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}); }catch(e){ return String(iso).slice(0,16).replace("T"," "); } }
+function notifClickOpen(id){ const list=db("notifications",[]); const n=list.find(x=>x.id===id); if(n&&!n.read){ n.read=true; save("notifications",list); } if(n&&n.taskId){ const t=db("tasks",[]).find(x=>x.id===n.taskId); if(t){ updateNavBadges(); openTask(n.taskId); return; } } renderPage("notif"); updateNavBadges(); }
+function notifMarkRead(id){ const list=db("notifications",[]); const n=list.find(x=>x.id===id); if(n)n.read=true; save("notifications",list); renderPage("notif"); updateNavBadges(); }
+function notifMarkAll(){ const me=currentUserName(); const list=db("notifications",[]); list.forEach(n=>{ if(n.to===me)n.read=true; }); save("notifications",list); renderPage("notif"); updateNavBadges(); }
+function notifClearRead(){ const me=currentUserName(); save("notifications", db("notifications",[]).filter(n=>!(n.to===me&&n.read))); renderPage("notif"); updateNavBadges(); }
+function viewNotif(){
+  const me=currentUserName();
+  const list=notifFor(me).slice().sort((a,b)=>(b.created||"").localeCompare(a.created||""));
+  const unread=list.filter(n=>!n.read).length;
+  const rows=list.map(n=>'<div class="card" style="margin-bottom:8px'+(!n.read?';border-left:3px solid var(--dgreen)':'')+'"><div class="card-bd" style="padding:11px 13px;display:flex;gap:10px;align-items:center">'
+    +'<div class="grow" style="cursor:'+(n.taskId?"pointer":"default")+'" onclick="notifClickOpen(\''+n.id+'\')"><div'+(!n.read?' style="font-weight:600"':'')+'>'+esc(n.text)+'</div><div class="muted mono" style="font-size:10px">'+esc(fmtWhen(n.created))+(n.by?" · from "+esc(n.by):"")+(n.taskId?" · opens task":"")+'</div></div>'
+    +(!n.read?'<button class="btn ghost sm" onclick="notifMarkRead(\''+n.id+'\')">Mark read</button>':'<span class="chip">read</span>')
+    +'</div></div>').join("");
+  return head("Overview","Notifications","Task assignments and changes land here for whoever is signed in. Assign a task to someone and they see it the next time they open the hub.")
+    +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:12px"><span class="chip '+(unread?"warn":"ok")+'">'+unread+' unread</span><span style="margin-left:auto"></span>'
+      +(unread?'<button class="btn ghost sm" onclick="notifMarkAll()">Mark all read</button>':'')
+      +'<button class="btn ghost sm" onclick="notifClearRead()">Clear read</button></div>'
+    +(rows||'<div class="card"><div class="empty"><h4>No notifications</h4><p>When someone assigns you a task, it shows up here.</p></div></div>');
+}
+
+/* ============================================================
+   BULK TASK ACTIONS
+   ============================================================ */
+let taskSel={};
+function taskSelToggle(id,on){ if(on)taskSel[id]=true; else delete taskSel[id]; renderPage("tasks"); }
+function taskSelAllList(){ const ids=taskFilters(db("tasks",[])).map(t=>t.id); const allOn=ids.length&&ids.every(i=>taskSel[i]); taskSel={}; if(!allOn) ids.forEach(i=>taskSel[i]=true); renderPage("tasks"); }
+function taskSelClear(){ taskSel={}; renderPage("tasks"); }
+function taskSelIds(){ return Object.keys(taskSel); }
+function taskBulkDelete(){ const ids=taskSelIds(); if(!ids.length)return; confirmModal("Delete "+ids.length+" selected task"+(ids.length>1?"s":"")+"? Bulk delete cannot be undone.",function(){ const set=new Set(ids); save("tasks", db("tasks",[]).filter(t=>!set.has(t.id))); taskSel={}; toast(ids.length+" tasks deleted."); renderPage("tasks"); updateNavBadges(); }); }
+function taskBulkStatus(v){ const ids=taskSelIds(); if(!ids.length)return; const set=new Set(ids); const list=db("tasks",[]); list.forEach(t=>{ if(set.has(t.id)){ t.status=v; t.updated=nowISO(); } }); save("tasks",list); taskSel={}; toast(ids.length+" updated."); renderPage("tasks"); updateNavBadges(); }
+function taskBulkAssign(){ const ids=taskSelIds(); if(!ids.length)return; openModal("Assign "+ids.length+" task"+(ids.length>1?"s":""),'<div class="field"><label>Assignee</label><select class="inp" id="bulk_asg">'+contactOptions("")+'</select></div>','<button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="taskBulkAssignDo()">Assign</button>'); }
+function taskBulkAssignDo(){ const name=val("bulk_asg"); const ids=taskSelIds(); const set=new Set(ids); const list=db("tasks",[]); list.forEach(t=>{ if(set.has(t.id)){ t.assignee=name; t.updated=nowISO(); try{notifyTask("updated",t,{field:"assignee",to:name});}catch(e){} } }); save("tasks",list); taskSel={}; closeModal(); toast(ids.length+" reassigned."); renderPage("tasks"); }
+
+/* ============================================================
+   REVIEWS with Add task, and Linen per-listing task
+   ============================================================ */
+function viewReviews(){
+  const list=db("reviews",[]).slice().sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+  const rows=list.map(r=>{ const pn=r.property?propName(r.property):(r.listing||"-");
+    const stars=r.rating?('<span class="chip '+(String(r.rating).indexOf("5")>=0?"ok":"warn")+'">'+esc(String(r.rating))+'</span>'):'';
+    return '<tr><td><b>'+esc(r.guest||"-")+'</b>'+(r.channel?' <span class="muted mono" style="font-size:10px">'+esc(r.channel)+'</span>':'')+'</td>'
+      +'<td style="font-size:12px">'+esc(pn)+'</td><td>'+stars+'</td>'
+      +'<td style="font-size:12px;max-width:420px">'+esc((r.text||"").slice(0,240))+'</td>'
+      +'<td class="rowact" style="white-space:nowrap"><button class="btn sm" onclick="reviewAddTask(\''+r.id+'\')">Add task</button> <button class="btn ghost sm" onclick="openForm(\'reviews\',\''+r.id+'\')">Edit</button> <button class="btn ghost sm" onclick="delRow(\'reviews\',\''+r.id+'\')">Del</button></td></tr>';
+  }).join("");
+  return head("Portfolio","Reviews","Respond within 48 hours of checkout. If a review flags maintenance or a fix, hit Add task and it lands on the board tied to that property.")
+    +'<div style="margin-bottom:12px"><button class="btn" onclick="openForm(\'reviews\')">Add review</button></div>'
+    +(rows?'<div class="card tight"><div class="wrap"><table class="tbl"><thead><tr><th>Guest</th><th>Property</th><th>Rating</th><th>Review</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>':'<div class="card"><div class="empty"><h4>No reviews yet</h4></div></div>');
+}
+function reviewAddTask(id){ const r=db("reviews",[]).find(x=>x.id===id); if(!r)return;
+  let pid=r.property||""; if(!pid && r.listing){ const nm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,""); const t=nm(r.listing); const p=db("properties",[]).find(x=>nm(x.title)===t||nm(x.nickname)===t||(x.title&&t&&nm(x.title).indexOf(t)>=0)); if(p)pid=p.id; }
+  const nt={id:uid("task"),title:"Follow up on review - "+(r.guest||"guest"),property:pid,assignee:"",priority:"P3",status:"open",due:"",notes:"From review: "+(r.text||"").slice(0,500),created:nowISO(),updated:nowISO()};
+  const list=db("tasks",[]); list.push(nt); save("tasks",list); toast("Task created from review."); openTask(nt.id); }
+function linenTaskOne(pid){ const ym=todayAU().slice(0,7); const p=db("properties",[]).find(x=>x.id===pid); if(!p)return; const list=db("tasks",[]); if(list.some(t=>t.tag==="wmdw"&&t.month===ym&&t.property===pid)){ toast("Already tasked this month."); return; } const nt={id:uid("task"),title:"Deep clean washing machine and dishwasher - "+p.nickname,property:pid,assignee:"Julie",priority:"P3",status:"open",due:endOfMonth(ym),notes:"Monthly appliance deep clean.",tag:"wmdw",month:ym,created:nowISO(),updated:nowISO()}; list.push(nt); save("tasks",list); try{notifyTask("created",nt);}catch(e){} toast("Deep-clean task created for Julie."); }
 
 /* ============================================================
    BOOT
