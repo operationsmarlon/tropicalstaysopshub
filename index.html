@@ -2147,8 +2147,8 @@ function sectionSetIcon(id,ic){ const list=getSections(); list.find(x=>x.id===id
 function subAddC(id){ nameModal("New subsection","Subsection name","",function(name){ const list=getSections(); const s=list.find(x=>x.id===id); s.subs=s.subs||[]; const nid=uid("sub"); s.subs.push({id:nid,name:name,blocks:[]}); saveSections(list); secTab[id]=nid; renderPage("sec:"+id); }); }
 function subRenameC(id,subId){ const s=sectionById(id); const sub=(s.subs||[]).find(x=>x.id===subId); if(!sub)return; nameModal("Rename subsection","Subsection name",sub.name,function(name){ const list=getSections(); list.find(x=>x.id===id).subs.find(x=>x.id===subId).name=name; saveSections(list); renderPage("sec:"+id); }); }
 function subDeleteC(id,subId){ confirmModal("Delete this subsection and its blocks?",function(){ const list=getSections(); const s=list.find(x=>x.id===id); s.subs=(s.subs||[]).filter(x=>x.id!==subId); delete secTab[id]; saveSections(list); renderPage("sec:"+id); }); }
-function blockAddMenu(secId,subId){ openModal("Add block",'<div style="display:flex;flex-direction:column;gap:8px"><button type="button" class="btn ghost" onclick="blockNew(\''+secId+'\',\''+subId+'\',\'text\')">Text or heading</button><button type="button" class="btn ghost" onclick="blockNew(\''+secId+'\',\''+subId+'\',\'attach\')">Photos, Drive links and documents</button><button type="button" class="btn ghost" onclick="blockNew(\''+secId+'\',\''+subId+'\',\'link\')">Single link</button><button type="button" class="btn ghost" onclick="blockNew(\''+secId+'\',\''+subId+'\',\'check\')">Checklist</button></div>','<button class="btn ghost" onclick="closeModal()">Cancel</button>'); }
-function blockNew(secId,subId,type){ closeModal(); const list=getSections(); const s=list.find(x=>x.id===secId); const sub=s.subs.find(x=>x.id===subId); sub.blocks=sub.blocks||[]; const b={id:uid("blk"),type:type,title:"",body:"",items:[],url:"",label:""}; sub.blocks.push(b); saveSections(list); blockEdit(secId,subId,b.id); }
+function blockAddMenu(secId,subId){ openModal("Add block",'<div style="display:flex;flex-direction:column;gap:8px"><button type="button" class="btn ghost" onclick="blockNew(\''+secId+'\',\''+subId+'\',\'text\')">Text or heading</button><button type="button" class="btn ghost" onclick="blockNew(\''+secId+'\',\''+subId+'\',\'attach\')">Photos, Drive links and documents</button><button type="button" class="btn ghost" onclick="blockNew(\''+secId+'\',\''+subId+'\',\'link\')">Single link</button><button type="button" class="btn ghost" onclick="blockNew(\''+secId+'\',\''+subId+'\',\'check\')">Checklist</button><button type="button" class="btn ghost" onclick="blockNew(\''+secId+'\',\''+subId+'\',\'table\')">Table (columns and rows)</button></div>','<button class="btn ghost" onclick="closeModal()">Cancel</button>'); }
+function blockNew(secId,subId,type){ closeModal(); const list=getSections(); const s=list.find(x=>x.id===secId); const sub=s.subs.find(x=>x.id===subId); sub.blocks=sub.blocks||[]; const b={id:uid("blk"),type:type,title:"",body:"",items:[],url:"",label:"",columns:[],rows:[]}; sub.blocks.push(b); saveSections(list); blockEdit(secId,subId,b.id); }
 function blockEdit(secId,subId,blockId){
   const s=sectionById(secId); const sub=(s.subs||[]).find(x=>x.id===subId); const b=(sub.blocks||[]).find(x=>x.id===blockId); if(!b)return;
   blkCtx={secId:secId,subId:subId,blockId:blockId};
@@ -2175,6 +2175,7 @@ function renderBlock(secId,subId,b,i){
   if(b.type==="attach") inner=(b.title?'<div class="sec-lbl">'+esc(b.title)+'</div>':'')+attachView(b.items,'<div class="muted" style="font-size:12px">No items yet.</div>');
   else if(b.type==="link") inner=(b.title?'<div class="sec-lbl">'+esc(b.title)+'</div>':'')+'<a class="atlink link" href="'+esc(b.url||"#")+'" target="_blank" rel="noopener"><b>'+esc(b.label||b.url||"Open")+'</b><span>open link</span></a>';
   else if(b.type==="check"){ const items=b.items||[]; const done=items.filter(x=>x.done).length; inner=(b.title?'<div class="sec-lbl">'+esc(b.title)+(items.length?' ('+done+' of '+items.length+')':'')+'</div>':'')+'<div class="sublist">'+items.map((x,ix)=>'<div class="subrow"><input type="checkbox" '+(x.done?"checked":"")+' onchange="blockCheckToggle(\''+secId+'\',\''+subId+'\',\''+b.id+'\','+ix+')"><div class="grow'+(x.done?" subdone":"")+'"><div>'+esc(x.text)+'</div></div></div>').join("")+'</div>'; }
+  else if(b.type==="table") inner=tblRender(secId,subId,b);
   else inner=(b.title?'<div class="sec-lbl">'+esc(b.title)+'</div>':'')+'<div style="white-space:pre-wrap;font-size:13px">'+esc(b.body||"")+'</div>';
   return '<div class="cblock"><div class="cblock-bd">'+inner+'</div><div class="cblock-act"><button class="btn ghost sm" onclick="blockMove(\''+secId+'\',\''+subId+'\','+i+',-1)">Up</button><button class="btn ghost sm" onclick="blockMove(\''+secId+'\',\''+subId+'\','+i+',1)">Down</button><button class="btn ghost sm" onclick="blockEdit(\''+secId+'\',\''+subId+'\',\''+b.id+'\')">Edit</button><button class="btn ghost sm" onclick="blockDelete(\''+secId+'\',\''+subId+'\',\''+b.id+'\')">Delete</button></div></div>';
 }
@@ -4242,25 +4243,37 @@ function viewBalances(){
     +kpis
     +'<div class="card tight"><div class="wrap"><table class="tbl"><thead><tr><th>Guest</th><th>Listing</th><th>Check-in</th><th>Balance</th><th>Method</th><th>Status</th><th>Notes</th></tr></thead><tbody>'+tr+'</tbody></table></div></div>';
 }
+function grpAll(){ if(db("groupBookings",null)===null){ const g=(typeof GROUP_SEED!=="undefined")?GROUP_SEED:{name:"Group booking",summary:"",units:[]}; save("groupBookings",[{id:uid("grp"),name:g.name||"Group booking",summary:g.summary||"",units:(g.units||[]).map(u=>Object.assign({id:uid("u")},u))}]); } return db("groupBookings",[]); }
+function grpSave(list){ save("groupBookings",list); }
+function grpAdd(){ const list=grpAll(); list.push({id:uid("grp"),name:"New group booking",summary:"",units:[]}); grpSave(list); renderPage("groups"); }
+function grpDel(id){ confirmModal("Delete this group booking and all its units?",function(){ grpSave(grpAll().filter(g=>g.id!==id)); renderPage("groups"); }); }
+function grpSet(id,field,v){ const list=grpAll(); const g=list.find(x=>x.id===id); if(g){ g[field]=v; grpSave(list); } }
+function grpUnitAdd(id){ const list=grpAll(); const g=list.find(x=>x.id===id); g.units=g.units||[]; g.units.push({id:uid("u")}); grpSave(list); renderPage("groups"); }
+function grpUnitDel(id,rid){ confirmModal("Delete this unit?",function(){ const list=grpAll(); const g=list.find(x=>x.id===id); g.units=(g.units||[]).filter(u=>u.id!==rid); grpSave(list); renderPage("groups"); }); }
+function grpUnitSet(id,rid,field,v){ const list=grpAll(); const g=list.find(x=>x.id===id); const u=(g.units||[]).find(x=>x.id===rid); if(u){ u[field]=v; grpSave(list); } }
+function grpCell(gid,u,key,type){ const v=u[key]; const t=type||"text"; return '<input class="inp" type="'+t+'" style="min-width:100px;font-size:12px" value="'+esc(v==null?"":String(v))+'" onchange="grpUnitSet(\''+gid+'\',\''+u.id+'\',\''+key+'\',this.value)">'; }
 function viewGroups(){
-  const G=(typeof GROUP_SEED!=="undefined")?GROUP_SEED:null;
-  if(!G) return head("Portfolio","Group bookings","")+'<div class="card"><div class="empty"><h4>No group bookings</h4></div></div>';
-  const u=G.units||[];
-  const confirmed=u.filter(x=>(x.status||"").toLowerCase().indexOf("confirm")>=0).length;
-  const nights=u.reduce((a,x)=>a+(parseFloat(x.nights)||0),0);
-  const tr=u.map(x=>'<tr><td><b>'+esc(x.guest||"")+'</b></td><td class="mono" style="font-size:11px">'+esc(x.resId||"")+'</td>'
-    +'<td><span class="chip '+((x.status||"").toLowerCase().indexOf("confirm")>=0?"ok":"warn")+'">'+esc(x.status||"")+'</span></td>'
-    +'<td style="font-size:12px">'+esc(x.property||"")+'</td><td class="mono" style="font-size:11px">'+esc(x.checkin||"")+' to '+esc(x.checkout||"")+'</td>'
-    +'<td class="mono">'+esc(String(x.nights||""))+'</td><td class="mono">'+esc(String(x.guests||""))+'</td></tr>').join("");
+  const groups=grpAll();
+  const cards=groups.map(g=>{
+    const urows=(g.units||[]).map(u=>'<tr>'
+      +'<td>'+grpCell(g.id,u,"guest")+'</td><td>'+grpCell(g.id,u,"resId")+'</td><td>'+grpCell(g.id,u,"status")+'</td><td>'+grpCell(g.id,u,"property")+'</td>'
+      +'<td>'+grpCell(g.id,u,"checkin","date")+'</td><td>'+grpCell(g.id,u,"checkout","date")+'</td><td>'+grpCell(g.id,u,"nights","number")+'</td><td>'+grpCell(g.id,u,"guests","number")+'</td>'
+      +'<td><button class="btn ghost sm" onclick="grpUnitDel(\''+g.id+'\',\''+u.id+'\')">Del</button></td></tr>').join("");
+    const nights=(g.units||[]).reduce((a,x)=>a+(parseFloat(x.nights)||0),0);
+    return '<div class="card" style="margin-bottom:16px"><div class="card-bd">'
+      +'<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px">'
+        +'<input class="inp" value="'+esc(g.name||"")+'" onchange="grpSet(\''+g.id+'\',\'name\',this.value)" style="max-width:320px;font-weight:600">'
+        +'<span class="chip">'+(g.units||[]).length+' units</span><span class="chip">'+nights+' nights</span>'
+        +'<span style="margin-left:auto"></span><button class="btn ghost sm" onclick="grpDel(\''+g.id+'\')">Delete group</button></div>'
+      +'<input class="inp" placeholder="Summary (contact, dates, notes)" value="'+esc(g.summary||"")+'" onchange="grpSet(\''+g.id+'\',\'summary\',this.value)" style="margin-bottom:10px">'
+      +'<div class="wrap"><table class="tbl"><thead><tr><th>Guest</th><th>Reservation</th><th>Status</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Nights</th><th>Guests</th><th></th></tr></thead><tbody>'+urows+'</tbody></table></div>'
+      +'<div style="margin-top:8px"><button class="btn sm" onclick="grpUnitAdd(\''+g.id+'\')">Add unit</button></div>'
+      +'</div></div>';
+  }).join("");
   return head("Portfolio","Group bookings",
-      "Multi-unit group bookings that need coordinated handling. Imported from the workbook.")
-    +'<div class="card" style="margin-bottom:14px"><div class="card-bd"><div style="font-weight:600;font-size:15px">'+esc(G.name)+'</div>'
-      +'<div class="muted" style="font-size:12px;margin-top:4px">'+esc(G.summary||"")+'</div></div></div>'
-    +'<div class="kpis"><div class="kpi accent"><div class="l">Units</div><div class="v">'+u.length+'</div></div>'
-      +'<div class="kpi"><div class="l">Confirmed</div><div class="v">'+confirmed+'</div></div>'
-      +'<div class="kpi"><div class="l">Total nights</div><div class="v">'+nights+'</div></div></div>'
-    +'<div class="card tight"><div class="wrap"><table class="tbl"><thead><tr><th>Guest</th><th>Reservation</th><th>Status</th><th>Property</th><th>Dates</th><th>Nights</th><th>Guests</th></tr></thead><tbody>'+tr+'</tbody></table></div></div>'
-    +'<div class="note">Group bookings hit one property cluster at once. Confirm mid-stay cleans, keys and parking per unit, and keep balances current under Balance collection.</div>';
+      "Multi-unit group bookings. Add, edit and delete groups and their units inline, everything saves as you type.")
+    +'<div style="margin-bottom:14px"><button class="btn" onclick="grpAdd()">Add group booking</button></div>'
+    +(cards||'<div class="card"><div class="empty"><h4>No group bookings yet</h4><p>Add one to get started.</p></div></div>');
 }
 
 /* ============================================================
@@ -4314,6 +4327,41 @@ function viewLinen(){
     +'<div class="card tight"><div class="wrap"><table class="tbl"><thead><tr><th>Listing</th><th>Inserts washed</th><th>Protector washed</th><th>Spare insert</th><th>Spare protector</th><th>Moisture bags</th><th>WM + DW deep clean</th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
     +'<div class="note">The deep-clean button creates one task per listing for Julie, due end of month, and skips any already marked done or already tasked this month, so you can run it safely more than once. Tick a listing here when the clean is done and it drops off next month\'s generation.</div>';
 }
+
+/* ============================================================
+   TABLE BLOCK for custom Spaces (columns + editable rows)
+   ============================================================ */
+function tblFind(secId,subId,bid){ const list=getSections(); const s=list.find(x=>x.id===secId); const sub=s&&(s.subs||[]).find(x=>x.id===subId); const b=sub&&(sub.blocks||[]).find(x=>x.id===bid); return {list:list,b:b}; }
+function tblCell(secId,subId,bid,row,col){ const v=row[col.key]; const ref="'"+secId+"','"+subId+"','"+bid+"','"+row.id+"','"+col.key+"'";
+  if(col.type==="yesno"){ const on=!!v; return '<button class="chip '+(on?"ok":"warn")+'" style="cursor:pointer;min-width:40px" onclick="tblToggle('+ref+')">'+(on?"Yes":"No")+'</button>'; }
+  if(col.type==="select"){ const opts=col.options||[]; return '<select class="inp" style="min-width:110px;font-size:12px" onchange="tblSet('+ref+',this.value)"><option value=""></option>'+opts.map(o=>'<option'+(o===v?" selected":"")+'>'+esc(o)+'</option>').join("")+'</select>'; }
+  const t=col.type==="number"?"number":col.type==="date"?"date":"text";
+  return '<input class="inp" type="'+t+'" style="min-width:120px;font-size:12px" value="'+esc(v==null?"":String(v))+'" onchange="tblSet('+ref+',this.value)">'; }
+function tblRender(secId,subId,b){
+  const cols=b.columns||[], rows=b.rows||[], bid=b.id;
+  const title=b.title?'<div class="sec-lbl">'+esc(b.title)+'</div>':'';
+  if(!cols.length) return title+'<div class="muted" style="font-size:12px;margin-bottom:8px">No columns yet. Add the first one.</div><button class="btn sm" onclick="tblAddCol(\''+secId+'\',\''+subId+'\',\''+bid+'\')">Add column</button>';
+  const head='<tr>'+cols.map(c=>'<th style="white-space:nowrap">'+esc(c.label)+' <button class="btn ghost sm" style="padding:0 5px" onclick="tblColMenu(\''+secId+'\',\''+subId+'\',\''+bid+'\',\''+c.key+'\')">edit</button></th>').join("")+'<th></th></tr>';
+  const body=rows.map(r=>'<tr>'+cols.map(c=>'<td>'+tblCell(secId,subId,bid,r,c)+'</td>').join("")+'<td><button class="btn ghost sm" onclick="tblDelRow(\''+secId+'\',\''+subId+'\',\''+bid+'\',\''+r.id+'\')">Del</button></td></tr>').join("");
+  return title+'<div class="wrap"><table class="tbl"><thead>'+head+'</thead><tbody>'+body+'</tbody></table></div>'
+    +'<div style="display:flex;gap:8px;margin-top:8px"><button class="btn sm" onclick="tblAddRow(\''+secId+'\',\''+subId+'\',\''+bid+'\')">Add row</button><button class="btn ghost sm" onclick="tblAddCol(\''+secId+'\',\''+subId+'\',\''+bid+'\')">Add column</button></div>';
+}
+function tblSet(secId,subId,bid,rid,ck,v){ const f=tblFind(secId,subId,bid); if(!f.b)return; const r=(f.b.rows||[]).find(x=>x.id===rid); if(r){ r[ck]=v; saveSections(f.list); } }
+function tblToggle(secId,subId,bid,rid,ck){ const f=tblFind(secId,subId,bid); const r=(f.b.rows||[]).find(x=>x.id===rid); if(r){ r[ck]=!r[ck]; saveSections(f.list); renderPage("sec:"+secId); } }
+function tblAddRow(secId,subId,bid){ const f=tblFind(secId,subId,bid); if(!f.b)return; f.b.rows=f.b.rows||[]; f.b.rows.push({id:uid("row")}); saveSections(f.list); renderPage("sec:"+secId); }
+function tblDelRow(secId,subId,bid,rid){ confirmModal("Delete this row?",function(){ const f=tblFind(secId,subId,bid); f.b.rows=(f.b.rows||[]).filter(r=>r.id!==rid); saveSections(f.list); renderPage("sec:"+secId); }); }
+function tblAddCol(secId,subId,bid){ nameModal("New column","Column name","",function(name){ const f=tblFind(secId,subId,bid); if(!f.b)return; f.b.columns=f.b.columns||[]; f.b.columns.push({key:uid("col"),label:name||"Column",type:"text"}); saveSections(f.list); renderPage("sec:"+secId); }); }
+function tblColMenu(secId,subId,bid,ck){ const f=tblFind(secId,subId,bid); const c=(f.b.columns||[]).find(x=>x.key===ck); if(!c)return;
+  const types=["text","number","date","yesno","select"];
+  const typeBtns=types.map(t=>'<button type="button" class="btn '+(c.type===t?"":"ghost")+' sm" onclick="tblSetColType(\''+secId+'\',\''+subId+'\',\''+bid+'\',\''+ck+'\',\''+t+'\')">'+t+'</button>').join(" ");
+  openModal("Column: "+esc(c.label),
+    '<div class="field"><label>Type</label><div style="display:flex;gap:6px;flex-wrap:wrap">'+typeBtns+'</div></div>'
+    +(c.type==="select"?'<div class="field"><label>Options (one per line)</label><textarea class="inp" id="col_opts" style="min-height:90px">'+esc((c.options||[]).join("\n"))+'</textarea><div style="margin-top:6px"><button class="btn ghost sm" onclick="tblSaveOpts(\''+secId+'\',\''+subId+'\',\''+bid+'\',\''+ck+'\')">Save options</button></div></div>':''),
+    '<button class="btn ghost" onclick="tblRenameCol(\''+secId+'\',\''+subId+'\',\''+bid+'\',\''+ck+'\')">Rename</button><button class="btn danger" onclick="tblDelCol(\''+secId+'\',\''+subId+'\',\''+bid+'\',\''+ck+'\')">Delete column</button><button class="btn" onclick="closeModal();renderPage(\'sec:'+secId+'\')">Done</button>'); }
+function tblSetColType(secId,subId,bid,ck,t){ const f=tblFind(secId,subId,bid); const c=f.b.columns.find(x=>x.key===ck); c.type=t; saveSections(f.list); tblColMenu(secId,subId,bid,ck); }
+function tblSaveOpts(secId,subId,bid,ck){ const f=tblFind(secId,subId,bid); const c=f.b.columns.find(x=>x.key===ck); c.options=val("col_opts").split("\n").map(s=>s.trim()).filter(Boolean); saveSections(f.list); toast("Options saved."); }
+function tblRenameCol(secId,subId,bid,ck){ nameModal("Rename column","Column name",(tblFind(secId,subId,bid).b.columns.find(x=>x.key===ck)||{}).label||"",function(name){ const f=tblFind(secId,subId,bid); f.b.columns.find(x=>x.key===ck).label=name||"Column"; saveSections(f.list); closeModal(); renderPage("sec:"+secId); }); }
+function tblDelCol(secId,subId,bid,ck){ confirmModal("Delete this column and its data?",function(){ const f=tblFind(secId,subId,bid); f.b.columns=(f.b.columns||[]).filter(x=>x.key!==ck); (f.b.rows||[]).forEach(r=>delete r[ck]); saveSections(f.list); closeModal(); renderPage("sec:"+secId); }); }
 
 /* ============================================================
    BOOT
