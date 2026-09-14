@@ -1542,12 +1542,12 @@ function midStays(list){
         +'<div class="chkrow">'+MID_SOP_STEPS.map(s=>'<span class="chkpill'+(sop[s[0]]?" on":"")+'" onclick="midToggleSop(\''+r.id+'\',\''+s[0]+'\')"><input type="checkbox" '+(sop[s[0]]?"checked":"")+' style="pointer-events:none">'+esc(s[1])+'</span>').join("")+'</div>';
       const cleanHTML=cleans.length?cleans.map(c=>cleanCard(r.id,c)).join(""):'<div class="muted" style="font-size:12px;padding:6px 0 10px">No cleans scheduled yet. Use Add clean.</div>';
       body='<div class="resb">'+sopHTML
-        +'<div class="sechd" style="margin-top:14px"><h3 style="font-size:13px">Scheduled mid-stay cleans</h3><span class="ct">'+cleans.length+'</span><div class="sp"><button class="btn sm" onclick="midOpenClean(\''+r.id+'\')">Add clean</button></div></div>'
+        +'<div class="sechd" style="margin-top:14px"><h3 style="font-size:13px">Scheduled mid-stay cleans</h3><span class="ct">'+cleans.length+'</span><div class="sp"><button class="btn ghost sm" onclick="midOpenStay(\''+r.id+'\')">Edit stay</button> <button class="btn sm" onclick="midOpenClean(\''+r.id+'\')">Add clean</button></div></div>'
         +cleanHTML+'</div>';
     }
     return '<div class="rescard">'+header+body+'</div>';
   }).join("");
-  return cards||'<div class="card"><div class="empty"><h4>No stays</h4><p>Stays over 14 nights appear here.</p></div></div>';
+  return cards||'<div class="card"><div class="empty"><h4>No stays yet</h4><p>Use Add stay / reservation above to create one, then open it to add cleans.</p></div></div>';
 }
 function midLog(list){
   const flat=[]; list.forEach(r=>(r.cleans||[]).forEach(c=>flat.push({r:r,c:c})));
@@ -1593,6 +1593,7 @@ function viewMidstay(){
   return head("Housekeeping, Julie at Sea Side Cleaning","Mid-stay cleans",
       "Every stay over 14 nights gets a mid-stay clean. Open a stay to add or edit its individual cleans. Everything saves automatically.")
     +midHero()+strip
+    +'<div style="margin:2px 0 12px"><button class="btn" onclick="midOpenStay()">Add stay / reservation</button></div>'
     +viewSeg(view,[["cleans","Stays & cleans"],["log","Clean master log"],["calendar","Calendar"]],"midSetView")
     +body;
 }
@@ -2090,7 +2091,7 @@ function maintMidstay(){
   }).join("");
   return '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:14px">'
       +'<span class="chip">'+all.filter(m=>m.status!=="Done").length+' open</span>'
-      +'<button class="btn sm" style="margin-left:auto" onclick="openForm(\'midstay\')">Add mid-stay clean</button>'
+      +'<button class="btn sm" style="margin-left:auto" onclick="midOpenStay()">Add stay / reservation</button>'
     +'</div>'
     +(rows?'<div class="card tight"><div class="wrap"><table class="tbl"><thead><tr><th>Guest</th><th>Property</th><th>Check-in</th><th>Check-out</th><th>Clean date</th><th>Cleaner</th><th>Fee</th><th>Status</th><th></th></tr></thead><tbody>'+rows+'</tbody></table></div></div>'
           :'<div class="card"><div class="empty"><h4>No mid-stay cleans</h4><p>Add one. Pick the guest, property and dates from the calendar pickers. Confirm the fee model and who it bills to with Isabell before it goes into guest-facing copy.</p></div></div>')
@@ -4441,6 +4442,41 @@ function reviewAddTask(id){ const r=db("reviews",[]).find(x=>x.id===id); if(!r)r
   const nt={id:uid("task"),title:"Follow up on review - "+(r.guest||"guest"),property:pid,assignee:"",priority:"P3",status:"open",due:"",notes:"From review: "+(r.text||"").slice(0,500),created:nowISO(),updated:nowISO()};
   const list=db("tasks",[]); list.push(nt); save("tasks",list); toast("Task created from review."); openTask(nt.id); }
 function linenTaskOne(pid){ const ym=todayAU().slice(0,7); const p=db("properties",[]).find(x=>x.id===pid); if(!p)return; const list=db("tasks",[]); if(list.some(t=>t.tag==="wmdw"&&t.month===ym&&t.property===pid)){ toast("Already tasked this month."); return; } const nt={id:uid("task"),title:"Deep clean washing machine and dishwasher - "+p.nickname,property:pid,assignee:"Julie",priority:"P3",status:"open",due:endOfMonth(ym),notes:"Monthly appliance deep clean.",tag:"wmdw",month:ym,created:nowISO(),updated:nowISO()}; list.push(nt); save("tasks",list); try{notifyTask("created",nt);}catch(e){} toast("Deep-clean task created for Julie."); }
+
+/* ============================================================
+   MID-STAY: add / edit / delete a stay (reservation)
+   ============================================================ */
+const MID_PLATFORMS=["Airbnb","Booking.com","VRBO","Expedia","Home & Villas","VIO","Direct","Manual"];
+let midStayCtx=null;
+function midNights(a,b){ if(!a||!b)return ""; const d=(new Date(b+"T00:00:00")-new Date(a+"T00:00:00"))/86400000; return d>0?Math.round(d):""; }
+function midOpenStay(resId){
+  if(!requireEdit("midstay"))return;
+  midStayCtx=resId||null;
+  const r=resId?(midRes(resId)||{}):{};
+  const propOpts='<option value="">Select property</option>'+props().map(p=>'<option value="'+p.id+'"'+(r.listingId===p.id?" selected":"")+'>'+esc(p.nickname)+'</option>').join("");
+  const platOpts=MID_PLATFORMS.map(o=>'<option'+((r.platform||"Manual")===o?" selected":"")+'>'+o+'</option>').join("");
+  const body='<div class="field"><label>Guest name</label><input class="inp" id="ms_guest" value="'+esc(r.guest||"")+'"></div>'
+    +'<div class="field"><label>Property</label><select class="inp" id="ms_prop">'+propOpts+'</select></div>'
+    +'<div class="row2"><div class="field"><label>Platform</label><select class="inp" id="ms_plat">'+platOpts+'</select></div>'
+    +'<div class="field"><label>Confirmation code</label><input class="inp" id="ms_code" value="'+esc(r.code||"")+'"></div></div>'
+    +'<div class="row2"><div class="field"><label>Check-in</label><input class="inp" type="date" id="ms_in" value="'+esc(r.in||"")+'"></div>'
+    +'<div class="field"><label>Check-out</label><input class="inp" type="date" id="ms_out" value="'+esc(r.out||"")+'"></div></div>'
+    +'<div class="field"><label>Guests (optional)</label><input class="inp" type="number" id="ms_guests" value="'+esc(r.guests!=null?String(r.guests):"")+'"></div>'
+    +'<div class="note">Add the cleans after saving. A stay over 14 nights should get a mid-stay clean, but you can add a stay of any length here.</div>';
+  openModal(resId?"Edit stay / reservation":"Add stay / reservation",body,
+    (resId?'<button class="btn ghost" style="margin-right:auto;color:var(--alert)" onclick="midDelStay()">Delete stay</button>':"")
+    +'<button class="btn ghost" onclick="closeModal()">Cancel</button><button class="btn" onclick="midSaveStay()">Save</button>');
+}
+function midSaveStay(){
+  const guest=val("ms_guest").trim(); if(!guest){ toast("Add a guest name."); return; }
+  const listingId=val("ms_prop"), cin=val("ms_in"), cout=val("ms_out"), nights=midNights(cin,cout);
+  const g=val("ms_guests"); const guests=(g===""?null:Number(g));
+  const list=midList();
+  if(midStayCtx){ const r=list.find(x=>x.id===midStayCtx); if(r){ r.guest=guest; r.listingId=listingId; r.listing=listingId?propName(listingId):(r.listing||""); r.platform=val("ms_plat"); r.code=val("ms_code").trim(); r.in=cin; r.out=cout; r.nights=nights; if(g!=="")r.guests=guests; r.updated=nowISO(); } }
+  else { list.push({id:uid("mid"),guest:guest,listingId:listingId,listing:listingId?propName(listingId):"",platform:val("ms_plat")||"Manual",code:val("ms_code").trim(),in:cin,out:cout,nights:nights,fee:99,status:"Unpaid",cleans:[],sop:{},guests:guests,created:nowISO(),updated:nowISO()}); }
+  save("midstay",list); closeModal(); renderPage("midstay");
+}
+function midDelStay(){ confirmModal("Delete this stay and all its cleans?",function(){ save("midstay", midList().filter(r=>r.id!==midStayCtx)); midStayCtx=null; closeModal(); renderPage("midstay"); }); }
 
 /* ============================================================
    BOOT
